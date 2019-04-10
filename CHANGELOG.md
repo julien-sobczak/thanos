@@ -11,44 +11,71 @@ We use *breaking* word for marking changes that are not backward compatible (rel
 
 ## Unreleased
 
+## [v0.4.0](https://github.com/improbable-eng/thanos/releases/tag/v0.4.0) - 2019.04.12
+
+TODO(bwplotka): Go through commits and update changelog.
+
 ### Added
+
 - [#811](https://github.com/improbable-eng/thanos/pull/811) Remote write receiver
 - [#798](https://github.com/improbable-eng/thanos/pull/798) Ability to limit the maximum concurrent about of Series() calls in Thanos Store and the maximum amount of samples.
+
+  New Store flags:
+  
+    * `--store.grpc.series-sample-limit` limits the amount of samples that might be retrieved on a single Series() call. By default it is 0. Consider enabling it by setting it to more than 0 if you are running on limited resources.
+    * `--store.grpc.series-max-concurrency` limits the number of concurrent Series() calls in Thanos Store. By default it is 20. Considering making it lower or bigger depending on the scale of your deployment.
+
+  New Store metrics:
+  
+    * `thanos_bucket_store_queries_dropped_total` shows how many queries were dropped due to the samples limit;
+    * `thanos_bucket_store_queries_concurrent_max` is a constant metric which shows how many Series() calls can concurrently be executed by Thanos Store;
+    * `thanos_bucket_store_queries_in_flight` shows how many queries are currently "in flight" i.e. they are being executed;
+    * `thanos_bucket_store_gate_duration_seconds` shows how many seconds it took for queries to pass through the gate in both cases - when that fails and when it does not.
+    
+  New Store tracing span:
+    * `store_query_gate_ismyturn` shows how long it took for a query to pass (or not) through the gate.
+    
 - [#910](https://github.com/improbable-eng/thanos/pull/910) Query's stores UI page is now sorted by type and old DNS or File SD stores are removed after 5 minutes (configurable via the new `--store.unhealthy-timeout=5m` flag).
-
-New options:
-
-* `--store.grpc.series-sample-limit` limits the amount of samples that might be retrieved on a single Series() call. By default it is 0. Consider enabling it by setting it to more than 0 if you are running on limited resources.
-* `--store.grpc.series-max-concurrency` limits the number of concurrent Series() calls in Thanos Store. By default it is 20. Considering making it lower or bigger depending on the scale of your deployment.
-* `--index.generate-missing-cache-file` if enabled, on startup compactor runs an on-off job that scans all the blocks to find all blocks with missing index cache file. It generates those if needed and upload. By default is disabled. Check logs on existence the line `generating index cache files is done`, then you can disable this flag. 
-
-New metrics:
-* `thanos_bucket_store_queries_dropped_total` shows how many queries were dropped due to the samples limit;
-* `thanos_bucket_store_queries_concurrent_max` is a constant metric which shows how many Series() calls can concurrently be executed by Thanos Store;
-* `thanos_bucket_store_queries_in_flight` shows how many queries are currently "in flight" i.e. they are being executed;
-* `thanos_bucket_store_gate_duration_seconds` shows how many seconds it took for queries to pass through the gate in both cases - when that fails and when it does not.
-
-New tracing span:
-* `store_query_gate_ismyturn` shows how long it took for a query to pass (or not) through the gate.
-
-:warning: **WARNING** :warning: #798 adds a new default limit to Thanos Store: `--store.grpc.series-max-concurrency`. Most likely you will want to make it the same as `--query.max-concurrent` on Thanos Query.
-
 - [#970](https://github.com/improbable-eng/thanos/pull/970) Added `PartialResponseStrategy` field for `RuleGroups` for `Ruler`.
 - [#1016](https://github.com/improbable-eng/thanos/pull/1016) Added option for another DNS resolver (miekg/dns client). 
 This to have SRV resolution working on [Golang 1.11+ with KubeDNS below v1.14](https://github.com/golang/go/issues/27546)
-- [#986](https://github.com/improbable-eng/thanos/pull/986) Store index cache files in object storage, reduces store start-up time by skipping the generating the index cache for all blocks and only do this for recently created uncompacted blocks. 
+
+   New Querier and Ruler flag: `-- store.sd-dns-resolver` which allows to specify resolver to use. Either `golang` or `miekgdns`
+   
+- [#986](https://github.com/improbable-eng/thanos/pull/986) Allow to save some startup & sync time in store gateway as it is no longer is needed to compute index-cache from block index on its own. 
+  For compatibility store GW still can do it, but it first checks bucket if there is index-cached uploaded already. 
+  In the same time, compactor precomputes the index cache file on every compaction. 
+
+  New Compactor flag: `--index.generate-missing-cache-file` was added to allow quicker addition of index cache files, if enabled it precomputes missing files on compactor startup. Note that it will take time and it's only one-off step per bucket.
+
+:warning: **WARNING** :warning: #798 adds a new default limit to Thanos Store: `--store.grpc.series-max-concurrency`. Most likely you will want to make it the same as `--query.max-concurrent` on Thanos Query.
 
 ### Changed 
+
 - [#970](https://github.com/improbable-eng/thanos/pull/970) Deprecated partial_response_disabled proto field. Added partial_response_strategy instead. Both in gRPC and Query API.
 - [#970](https://github.com/improbable-eng/thanos/pull/970) No `PartialResponseStrategy` field for `RuleGroups` by default means `abort` strategy (old PartialResponse disabled) as this is recommended option for Rules and alerts.
 
+  Metrics:
+    
+    * Added `thanos_rule_evaluation_with_warnings_total` to Ruler.
+    * DNS `thanos_ruler_query_apis*` are now `thanos_ruler_query_apis_*` for consistency.
+    * DNS `thanos_querier_store_apis*` are now `thanos_querier_store_apis__*` for consistency.
+    * Query Gate `thanos_bucket_store_series*` are now `thanos_bucket_store_series___*` for consistency.
+    * Most of thanos ruler metris related to rule manager has `strategy` label.
+  
+  Ruler tracing spans:
+  
+    * `/rule_instant_query HTTP[client]` is now `/rule_instant_query_part_resp_abort HTTP[client]"` if request is for abort strategy.
+  
 ### Fixed
-- [#921](https://github.com/improbable-eng/thanos/pull/921) `thanos_objstore_bucket_last_successful_upload_time` now does not appear when no blocks have been uploaded so far
+
+- [#921](https://github.com/improbable-eng/thanos/pull/921) `thanos_objstore_bucket_last_successful_upload_time` now does not appear when no blocks have been uploaded so far.
 - [#966](https://github.com/improbable-eng/thanos/pull/966) Bucket: verify no longer warns about overlapping blocks, that overlap `0s` 
 
 ## [v0.3.2](https://github.com/improbable-eng/thanos/releases/tag/v0.3.2) - 2019.03.04
 
 ### Added
+
 - [#851](https://github.com/improbable-eng/thanos/pull/851) New read API endpoint for api/v1/rules and api/v1/alerts.
 - [#873](https://github.com/improbable-eng/thanos/pull/873) Store: fix set index cache LRU
 
@@ -57,12 +84,14 @@ broken so it was unbounded all the time. From this release actual value matters 
 the old behaviour (no boundary), use a large enough value.
 
 ### Fixed
+
 - [#833](https://github.com/improbable-eng/thanos/issues/833) Store Gateway matcher regression for intersecting with empty posting.
 - [#867](https://github.com/improbable-eng/thanos/pull/867) Fixed race condition in sidecare between reloader and shipper.
 
 ## [v0.3.1](https://github.com/improbable-eng/thanos/releases/tag/v0.3.1) - 2019.02.18
 
 ### Fixed
+
 - [#829](https://github.com/improbable-eng/thanos/issues/829) Store Gateway crashing due to `slice bounds out of range`.
 - [#834](https://github.com/improbable-eng/thanos/issues/834) Store Gateway matcher regression for `<>` `!=`.
 
